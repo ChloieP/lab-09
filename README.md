@@ -1,3 +1,36 @@
+# Lab 09-API
+
+**Author**: Michael and Chloie
+**Version**: 1.1.0 (increment the patch/fix version number if you make more commits past your first submission)
+
+
+## Number and name of feature: #1 
+* Estimate of time needed to complete: ____
+* Start time: ____
+* Finish time: ____
+* Actual time needed to complete: ____
+
+## Number and name of feature: #2 
+* Estimate of time needed to complete ____
+* Start time: ____
+* Finish time: ____
+* Actual time needed to complete: ____
+
+## Overview
+This application is for users to put in and API key and location data in order to retrieve information from various APIs
+
+## Getting Started
+<!-- What are the steps that a user must take in order to build this app on their own machine and get it running? -->
+
+## Architecture
+This application is built using Node and Express. We are using the Google Maps API, Yelp API, Dark Sky API, Event Brite API, Meetups API, and Weather API.
+
+## Change Log
+01-05-2029 8:30am - Data formatting implemented with map function
+
+## Credits and Collaborations
+Michael and Chloie
+
 # Lab 08-API
 
 **Author**: Michael and Ed
