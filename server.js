@@ -79,15 +79,26 @@ Events.lookup = lookup;
 function Movies(data) {
   this.title = data.title;
   this.overview = data.overview;
-  this.image_url = data.poster_path;
+  this.image_url = `https://image.tmdb.org/t/p/original${data.poster_path}`;
   this.released_on = data.release_date;
   this.total_votes = data.vote_count;
   this.average_votes = data.vote_average;
   this.popularity = data.popularity;
 }
 
-Movies.tableName='movies';
+Movies.tableName = 'movies';
 Movies.lookup = lookup;
+
+function Yelp(data) {
+  this.name = data.name;
+  this.rating = data.rating;
+  this.price = data.price;
+  this.url = data.url;
+  this.image_url = data.image_url;
+}
+
+Yelp.tableName = 'yelps';
+Yelp.lookup = lookup;
 
 //--------------------------------
 // Database and API Query for Locations
@@ -104,7 +115,7 @@ Location.lookup = handler => {
         handler.cacheMiss(results);
       }
     })
-    .catch(console.error);
+    .catch(() => errorMessage());
 };
 
 Location.fetchLocation = (data) => {
@@ -201,7 +212,6 @@ Movies.fetch = (query) => {
 
   return superagent.get(url)
     .then(result => {
-      console.log(result.body.results);
       const movieData = result.body.results.map(item => {
         let movie = new Movies(item);
         movie.save(query.id);
@@ -217,6 +227,38 @@ Movies.prototype.save = function(location_id) {
   let SQL = `INSERT INTO movies
     (title, overview, image_url, released_on, total_votes, average_votes, popularity, location_id)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`;
+
+  const values = Object.values(this);
+  values.push(location_id);
+
+  return client.query(SQL, values);
+};
+
+//--------------------------------
+// Database and API Query for Yelp
+//--------------------------------
+Yelp.fetch = (query) => {
+  let url = `https://api.yelp.com/v3/businesses/search?latitude=${query.latitude}&longitude=${query.longitude}`;
+
+  return superagent.get(url) 
+    .set('Authorization', `Bearer ${process.env.YELP_API_KEY}`)
+    .then(result => {
+      const yelpData = result.body.businesses.map(item => {
+        let yelp = new Yelp(item);
+        yelp.save(query.id);
+        return yelp;
+      });
+
+      return yelpData;
+    })
+    .catch(() => errorMessage());
+};
+
+Yelp.prototype.save = function(location_id) {
+  let SQL = `INSERT INTO yelps
+    (name, rating, price, url, image_url, location_id)
+    VALUES ($1, $2, $3, $4, $5, $6);`;
+
   const values = Object.values(this);
   values.push(location_id);
 
@@ -280,12 +322,9 @@ let getMovies = (request, response) => {
     location_id: request.query.data.id,
     tableName: Movies.tableName,
     cacheHit: (result) => {
-      console.log('CacheHit');
-      console.log(result);
       response.send(result.rows);
     },
     cacheMiss: () => {
-      console.log('CacheMiss');
       Movies.fetch(request.query.data)
         .then(results => response.send(results))
         .catch(() => errorMessage());
@@ -295,6 +334,26 @@ let getMovies = (request, response) => {
   Movies.lookup(moviesHandler);
 };
 
+let getYelp = (request, response) => {
+  const yelpHandler = {
+    location_id: request.query.data.id,
+    tableName: Yelp.tableName,
+    cacheHit: (result) => {
+      console.log('CacheHit');
+      console.log(result);
+      response.send(result.rows);
+    },
+    cacheMiss: () => {
+      console.log('cacheMiss');
+      Yelp.fetch(request.query.data)
+        .then(results => response.send(results))
+        .catch(() => errorMessage());
+    }
+  };
+
+  Yelp.lookup(yelpHandler);
+};
+
 //--------------------------------
 // Routes
 //--------------------------------
@@ -302,6 +361,7 @@ app.get('/location', getLocation);
 app.get('/weather', getWeather);
 app.get('/events', getEvents);
 app.get('/movies', getMovies);
+app.get('/yelp', getYelp);
 
 //--------------------------------
 // Error Message
