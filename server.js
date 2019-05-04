@@ -5,7 +5,8 @@
 //--------------------------------
 require('dotenv').config();
 
-//--------------------------------g
+//--------------------------------
+// Require libraries
 //--------------------------------
 const express = require('express');
 const cors = require('cors');
@@ -31,7 +32,6 @@ client.on('err', err => console.error(err));
 //--------------------------------
 // Lookup Functions
 //--------------------------------
-
 let lookup = (handler) => {
   let SQL = `SELECT * FROM ${handler.tableName} WHERE location_id=$1;`;
 
@@ -75,6 +75,19 @@ function Events(data) {
 
 Events.tableName = 'events';
 Events.lookup = lookup;
+
+function Movies(data) {
+  this.title = data.title;
+  this.overview = data.overview;
+  this.image_url = data.poster_path;
+  this.released_on = data.release_date;
+  this.total_votes = data.vote_count;
+  this.average_votes = data.vote_average;
+  this.popularity = data.popularity;
+}
+
+Movies.tableName='movies';
+Movies.lookup = lookup;
 
 //--------------------------------
 // Database and API Query for Locations
@@ -181,6 +194,36 @@ Events.prototype.save = function(location_id) {
 };
 
 //--------------------------------
+// Database and API Query for Movies
+//--------------------------------
+Movies.fetch = (query) => {
+  let url = `https://api.themoviedb.org/3/movie/now_playing?api_key=${process.env.MOVIE_API_KEY}&language=en-US&page=1`;
+
+  return superagent.get(url)
+    .then(result => {
+      console.log(result.body.results);
+      const movieData = result.body.results.map(item => {
+        let movie = new Movies(item);
+        movie.save(query.id);
+        return movie;
+      });
+
+      return movieData;
+    })
+    .catch(() => errorMessage());
+};
+
+Movies.prototype.save = function(location_id) {
+  let SQL = `INSERT INTO movies
+    (title, overview, image_url, released_on, total_votes, average_votes, popularity, location_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`;
+  const values = Object.values(this);
+  values.push(location_id);
+
+  return client.query(SQL, values);
+};
+
+//--------------------------------
 // Route Callbacks
 //--------------------------------
 let getLocation = (request, response) => {
@@ -224,12 +267,32 @@ let getEvents = (request, response) => {
     },
     cacheMiss: () => {
       Events.fetch(request.query.data)
-        .then((results) => response.send(results))
+        .then(results => response.send(results))
         .catch(() => errorMessage());
     }
   };
 
   Events.lookup(eventHandler);
+};
+
+let getMovies = (request, response) => {
+  const moviesHandler = {
+    location_id: request.query.data.id,
+    tableName: Movies.tableName,
+    cacheHit: (result) => {
+      console.log('CacheHit');
+      console.log(result);
+      response.send(result.rows);
+    },
+    cacheMiss: () => {
+      console.log('CacheMiss');
+      Movies.fetch(request.query.data)
+        .then(results => response.send(results))
+        .catch(() => errorMessage());
+    }
+  };
+
+  Movies.lookup(moviesHandler);
 };
 
 //--------------------------------
@@ -238,6 +301,7 @@ let getEvents = (request, response) => {
 app.get('/location', getLocation);
 app.get('/weather', getWeather);
 app.get('/events', getEvents);
+app.get('/movies', getMovies);
 
 //--------------------------------
 // Error Message
