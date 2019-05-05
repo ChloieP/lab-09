@@ -50,8 +50,6 @@ let lookup = (handler) => {
 // Delete Function
 //--------------------------------
 let deleteByLocationId = (table, location_id) => {
-  console.log('DELETE');
-  console.log(table, location_id);
   const SQL = `DELETE FROM ${table} WHERE location_id=${location_id};`;
   return client.query(SQL);
 };
@@ -122,7 +120,10 @@ Yelp.deleteByLocationId = deleteByLocationId;
 // Timeouts
 //--------------------------------
 const timeout = {
-  weather: 15 * 1000,
+  weather: 15 * 1000, // Weather updates after 15 seconds as to help with grading
+  events: 86400 * 1000, // Events updates after 24 hours due to events possibly changing or getting added within that timeframe
+  movies: 25920 * 1000, // Movies get added every week so i've chosen to update this every few days
+  yelp: 2629743 * 1000 // Yelp updates after 1 month because average rating and prices aren't going to change frequently
 };
 
 //--------------------------------
@@ -314,7 +315,6 @@ let getWeather = (request, response) => {
     tableName: Weather.tableName,
     cacheHit: (result) => {
       let ageOfResult = (Date.now() - result.rows[0].created_at);
-      ageOfResult > timeout.weather ? this.cacheMiss : response.send(result.rows);
       if (ageOfResult > timeout.weather) {
         Weather.deleteByLocationId(Weather.tableName, result.rows[0].location_id);
         this.cacheMiss();
@@ -323,7 +323,6 @@ let getWeather = (request, response) => {
       }
     },
     cacheMiss: () => {
-      console.log('cacheMiss');
       Weather.fetch(request.query.data)
         .then((results) => response.send(results))
         .catch(() => errorMessage());
@@ -339,6 +338,13 @@ let getEvents = (request, response) => {
     tableName: Events.tableName,
     cacheHit: (result) => {
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.events) {
+        Events.deleteByLocationId(Events.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Events.fetch(request.query.data)
@@ -356,6 +362,13 @@ let getMovies = (request, response) => {
     tableName: Movies.tableName,
     cacheHit: (result) => {
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.movies) {
+        Movies.deleteByLocationId(Movies.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Movies.fetch(request.query.data)
@@ -373,6 +386,13 @@ let getYelp = (request, response) => {
     tableName: Yelp.tableName,
     cacheHit: (result) => {
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.yelp) {
+        Yelp.deleteByLocationId(Yelp.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Yelp.fetch(request.query.data)
