@@ -30,7 +30,7 @@ client.connect();
 client.on('err', err => console.error(err));
 
 //--------------------------------
-// Lookup Functions
+// Lookup Function
 //--------------------------------
 let lookup = (handler) => {
   let SQL = `SELECT * FROM ${handler.tableName} WHERE location_id=$1;`;
@@ -47,6 +47,14 @@ let lookup = (handler) => {
 };
 
 //--------------------------------
+// Delete Function
+//--------------------------------
+let deleteByLocationId = (table, location_id) => {
+  const SQL = `DELETE FROM ${table} WHERE location_id=${location_id};`;
+  return client.query(SQL);
+};
+
+//--------------------------------
 // Constructors Functions
 //--------------------------------
 function Location(query, geoData) {
@@ -59,10 +67,12 @@ function Location(query, geoData) {
 function Weather(day) {
   this.forecast = day.summary;
   this.time = new Date(day.time * 1000).toDateString();
+  this.created_at = Date.now();
 }
 
 Weather.tableName = 'weathers';
 Weather.lookup = lookup;
+Weather.deleteByLocationId = deleteByLocationId;
 
 function Events(data) {
   let time = Date.parse(data.start.local);
@@ -71,10 +81,12 @@ function Events(data) {
   this.name = data.name.text;
   this.event_date = newDate;
   this.summary = data.summary;
+  this.created_at = Date.now();
 }
 
 Events.tableName = 'events';
 Events.lookup = lookup;
+Events.deleteByLocationId = deleteByLocationId;
 
 function Movies(data) {
   this.title = data.title;
@@ -84,10 +96,12 @@ function Movies(data) {
   this.total_votes = data.vote_count;
   this.average_votes = data.vote_average;
   this.popularity = data.popularity;
+  this.created_at = Date.now();
 }
 
 Movies.tableName = 'movies';
 Movies.lookup = lookup;
+Movies.deleteByLocationId = deleteByLocationId;
 
 function Yelp(data) {
   this.name = data.name;
@@ -95,10 +109,22 @@ function Yelp(data) {
   this.price = data.price;
   this.url = data.url;
   this.image_url = data.image_url;
+  this.created_at = Date.now();
 }
 
 Yelp.tableName = 'yelps';
 Yelp.lookup = lookup;
+Yelp.deleteByLocationId = deleteByLocationId;
+
+//--------------------------------
+// Timeouts
+//--------------------------------
+const timeout = {
+  weather: 15 * 1000, // Weather updates after 15 seconds as to help with grading
+  events: 86400 * 1000, // Events updates after 24 hours due to events possibly changing or getting added within that timeframe
+  movies: 25920 * 1000, // Movies get added every week so i've chosen to update this every few days
+  yelp: 2629743 * 1000 // Yelp updates after 1 month because average rating and prices aren't going to change frequently
+};
 
 //--------------------------------
 // Database and API Query for Locations
@@ -165,8 +191,8 @@ Weather.fetch = (query) => {
 
 Weather.prototype.save = function(location_id) {
   let SQL = `INSERT INTO weathers 
-    (forecast, time, location_id)
-    VALUES ($1, $2, $3);`;
+    (forecast, time, created_at, location_id)
+    VALUES ($1, $2, $3, $4);`;
 
   let values = Object.values(this);
   values.push(location_id);
@@ -195,8 +221,8 @@ Events.fetch = (query) => {
 
 Events.prototype.save = function(location_id) {
   let SQL = `INSERT INTO events 
-    (link, name, event_date, summary, location_id)
-    VALUES ($1, $2, $3, $4, $5);`;
+    (link, name, event_date, summary, created_at, location_id)
+    VALUES ($1, $2, $3, $4, $5, $6);`;
 
   let values = Object.values(this);
   values.push(location_id);
@@ -225,8 +251,8 @@ Movies.fetch = (query) => {
 
 Movies.prototype.save = function(location_id) {
   let SQL = `INSERT INTO movies
-    (title, overview, image_url, released_on, total_votes, average_votes, popularity, location_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`;
+    (title, overview, image_url, released_on, total_votes, average_votes, popularity, created_at, location_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);`;
 
   const values = Object.values(this);
   values.push(location_id);
@@ -256,8 +282,8 @@ Yelp.fetch = (query) => {
 
 Yelp.prototype.save = function(location_id) {
   let SQL = `INSERT INTO yelps
-    (name, rating, price, url, image_url, location_id)
-    VALUES ($1, $2, $3, $4, $5, $6);`;
+    (name, rating, price, url, image_url, created_at, location_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7);`;
 
   const values = Object.values(this);
   values.push(location_id);
@@ -283,12 +309,18 @@ let getLocation = (request, response) => {
   Location.lookup(locationHandler);
 };
 
-let getWeather = (request, response) => {
+let getWeather = (request, response) => { 
   const weatherHandler = {
     location_id: request.query.data.id,
     tableName: Weather.tableName,
     cacheHit: (result) => {
-      response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.weather) {
+        Weather.deleteByLocationId(Weather.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Weather.fetch(request.query.data)
@@ -306,6 +338,13 @@ let getEvents = (request, response) => {
     tableName: Events.tableName,
     cacheHit: (result) => {
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.events) {
+        Events.deleteByLocationId(Events.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Events.fetch(request.query.data)
@@ -323,6 +362,13 @@ let getMovies = (request, response) => {
     tableName: Movies.tableName,
     cacheHit: (result) => {
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.movies) {
+        Movies.deleteByLocationId(Movies.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
       Movies.fetch(request.query.data)
@@ -339,12 +385,16 @@ let getYelp = (request, response) => {
     location_id: request.query.data.id,
     tableName: Yelp.tableName,
     cacheHit: (result) => {
-      console.log('CacheHit');
-      console.log(result);
       response.send(result.rows);
+      let ageOfResult = (Date.now() - result.rows[0].created_at);
+      if (ageOfResult > timeout.yelp) {
+        Yelp.deleteByLocationId(Yelp.tableName, result.rows[0].location_id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
     },
     cacheMiss: () => {
-      console.log('cacheMiss');
       Yelp.fetch(request.query.data)
         .then(results => response.send(results))
         .catch(() => errorMessage());
